@@ -307,7 +307,7 @@ def create_master_bias(list_files, fitsfile=None, fits_section=None, gain=None, 
     combine.header['NBIAS'] = len(list_files)
     if fitsfile is not None:
         combine.header['FILENAME'] = os.path.basename(fitsfile)
-        combine.write(fitsfile, clobber=True)
+        combine.write(fitsfile)  #, clobber=True)
     return combine
 
 def create_master_flat(list_files, flat_filter=None, fitsfile=None, bias=None, fits_section=None, gain=None, 

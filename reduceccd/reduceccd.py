@@ -14,7 +14,7 @@ from photutils import Background2D, MedianBackground, MeanBackground
 from photutils import ModeEstimatorBackground, MMMBackground
 from astropy.stats import sigma_clipped_stats, SigmaClip
 from ccdproc.utils.slices import slice_from_string
-from skimage.feature import register_translation
+# from skimage.feature import register_translation
 from scipy.ndimage import interpolation
 from ccdproc import ImageFileCollection
 from photutils import make_source_mask

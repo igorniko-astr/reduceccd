@@ -362,7 +362,55 @@ def create_master_flat_from_dict(list_files, dflat, verbose=True, **kwargs):
         dflat_ccd[flat_filter] = create_master_flat(list_files, flat_filter, master_flat, **kwargs)
     return dflat_ccd
 
-def ccdproc_images_filter(list_files, image_filter=None, master_flat=None, master_bias=None, fits_section=None, gain=None, readnoise=None, 
+def create_master_dark(list_files, fitsfile=None, bias=None, fits_section=None, gain=None, 
+	method='average', dfilter={'imagetyp':'DARK'}, mask=None, key_find='find', 
+	invert_find=False, sjoin=',', overwrite=True):
+    if gain is not None and not isinstance(gain, u.Quantity):
+        gain = gain * u.electron / u.adu
+    ldark = []
+    list_files = getListFiles(list_files, dfilter, mask, key_find=key_find, invert_find=invert_find)
+    if len(list_files) == 0:
+        print ('WARNING: No dark files available')
+        return 
+    for filename in list_files:
+        ccd = CCDData.read(filename, unit= u.adu)
+        trimmed = True if fits_section is not None else False
+        ccd = ccdproc.trim_image(ccd, fits_section=fits_section, add_keyword={'trimmed': trimmed})
+        if gain is not None:
+            ccd = ccdproc.gain_correct(ccd, gain)
+        if bias is not None:
+            if isinstance(bias, str):
+                bias = fits2CCDData(bias, single=True)
+            ccd = ccdproc.subtract_bias(ccd, bias)
+        ldark.append(ccd)
+    combine = ccdproc.combine(ldark, method=method)
+    if gain is not None and not 'GAIN' in combine.header:
+        combine.header.set('GAIN', gain.value, gain.unit)
+    combine.header['CGAIN'] = True if gain is not None else False
+    combine.header['IMAGETYP'] = 'DARK'
+    combine.header['CMETHOD'] = method
+    combine.header['CCDVER'] = VERSION
+    addKeyHdr(combine.header, 'MBIAS', getFilename(bias))
+    if sjoin is not None:
+        combine.header['LDARK'] = sjoin.join([os.path.basename(fits) for fits in list_files])
+    combine.header['NDARK'] = len(list_files)
+    if fitsfile is not None:
+        combine.header['FILENAME'] = os.path.basename(fitsfile)
+        combine.write(fitsfile,
+                      overwrite=overwrite
+                      ) #, clobber=True)
+    return combine
+
+def create_master_dark_from_dict(list_files, ddark, verbose=True, **kwargs):
+    ddark_ccd = {}
+    for dark_filter in ddark:
+        master_dark = ddark[dark_filter]
+        if verbose:
+            print ('>>> Creating dark: %s' % os.path.basename(master_dark))
+        ddark_ccd[dark_filter] = create_master_dark(list_files, dark_filter, master_dark, **kwargs)
+    return ddark_ccd
+
+def ccdproc_images_filter(list_files, image_filter=None, master_dark=None, master_flat=None, master_bias=None, fits_section=None, gain=None, readnoise=None, 
 	error=False, sky=True, dout=None, cosmic=False, mbox=15, rbox=15, gbox=11, cleantype="medmask", cosmic_method='lacosmic', 
 	sigclip=5, key_filter='filter', dfilter={'imagetyp':'LIGHT'}, mask=None, key_find='find', invert_find=False, overwrite=True, **kwargs):
     if error and (gain is None or readnoise is None):
@@ -378,7 +426,7 @@ def ccdproc_images_filter(list_files, image_filter=None, master_flat=None, maste
     dccd = {}
     for filename in list_files:
         ccd = CCDData.read(filename, unit= u.adu)
-        nccd = ccdproc.ccd_process(ccd, trim=fits_section, gain=gain, master_bias=master_bias, master_flat=master_flat, readnoise=readnoise, error=error)
+        nccd = ccdproc.ccd_process(ccd, trim=fits_section, gain=gain, master_bias=master_bias, master_dark=master_dark, master_flat=master_flat, readnoise=readnoise, error=error)
         for key in ccd.header:
             if not key in nccd.header:
                 nccd.header[key] = ccd.header[key]
@@ -388,6 +436,7 @@ def ccdproc_images_filter(list_files, image_filter=None, master_flat=None, maste
         if sky:
             nccd = subtract_sky_ccd(nccd, **kwargs)
         addKeyHdr(nccd.header, 'MBIAS', getFilename(master_bias))
+        addKeyHdr(nccd.header, 'MDARK', getFilename(master_dark))
         addKeyHdr(nccd.header, 'MFLAT', getFilename(master_flat))
         filename = 'c%s' % os.path.basename(filename)
         dccd[filename] = nccd
@@ -400,12 +449,12 @@ def ccdproc_images_filter(list_files, image_filter=None, master_flat=None, maste
                    )  # clobber=True)
     return dccd
 
-def ccdproc_images(list_files, dmaster_flat, master_bias=None, fits_section=None, sky=True, verbose=True, **kwargs):
+def ccdproc_images(list_files, dmaster_flat, master_dark=None, master_bias=None, fits_section=None, sky=True, verbose=True, **kwargs):
     dccd_images = {}
     for filt in dmaster_flat:
         if verbose:
             print ('>>> Reducing Filter: %s' % filt)
-        dccd = ccdproc_images_filter(list_files, filt, master_flat=dmaster_flat[filt], master_bias=master_bias, fits_section=fits_section, sky=sky, **kwargs)
+        dccd = ccdproc_images_filter(list_files, filt, master_flat=dmaster_flat[filt], master_dark=master_dark, master_bias=master_bias, fits_section=fits_section, sky=sky, **kwargs)
         dccd_images[filt] = dccd
     return dccd_images
 
@@ -607,11 +656,12 @@ def align_combine(image_file_collection, filters=None, objects=None, dout=None, 
             fitsfile = '%s_%s.%s' % (obj, image_filter, image_suffix) if date is None or len(date) == 0 else '%s_%s_%s.%s' % (obj, image_filter, date, image_suffix)
             align_combine_images(list_files, fitsfile, ref_image_fits=ref_image_fits, dout=dout, force=force, **kwargs)
 
-def reduceNight(path, filters=None, fits_section=None, date=None, dout=None, create_bias=True, create_flat=True, 
+def reduceNight(path, filters=None, fits_section=None, date=None, dout=None, create_bias=True, create_dark=True, create_flat=True, 
 	correct_images=True, gain=None, readnoise=None, sky=True, lower=1.0, upper=95., combine=True, align=True,
 	objects=None, cosmic=True, mbox=15, rbox=15, gbox=11, cleantype="medmask", sky_after=True, dict_sky={}, 
-	dict_combine={}, method='median', mask_bias=None, dfilter_bias={'imagetyp':'bias'}, lfits_bias=None, 
-	invert_find_bias=False, dfilter_flat={'imagetyp':'FLAT'}, mask_flat=None, cosmic_method='lacosmic', 
+	dict_combine={}, bias_method='average', dark_method='average', flat_method='median', mask_bias=None, dfilter_bias={'imagetyp':'BIAS'}, lfits_bias=None, 
+	invert_find_bias=False, dfilter_dark={'imagetyp':'DARK'}, lfits_dark=None, mask_dark=None, invert_find_dark=False,
+    dfilter_flat={'imagetyp':'FLAT'}, mask_flat=None, cosmic_method='lacosmic', 
 	invert_find_flat=False, dfilter_images={'imagetyp':'LIGHT'}, mask_images=None, key_find='find', 
 	key_filter='filter', find_obj=True, invert_find_images=False, find_filter=True, error=False, 
 	invert_find_align=False, suffix=None, dict_align_combine={}, verbose=True, overwrite=True):
@@ -657,6 +707,10 @@ def reduceNight(path, filters=None, fits_section=None, date=None, dout=None, cre
     master_bias = 'master_bias_%s.%s' % (date, suffix) if date is not None else 'master_bias.%s' % suffix
     master_bias = join_path(master_bias, dout)
 
+    # Create name master dark
+    master_dark = 'master_dark_%s.%s' % (date, suffix) if date is not None else 'master_dark.%s' % suffix
+    master_dark = join_path(master_dark, dout)
+
     # Create name master Flats
     dflat = {}
     for filt in filters:
@@ -669,14 +723,24 @@ def reduceNight(path, filters=None, fits_section=None, date=None, dout=None, cre
         lfits_bias = ic_all if lfits_bias is None else lfits_bias
         if verbose:
             print ('>>> Creating BIAS: %s' % os.path.basename(master_bias))
-        ccd_master_bias = create_master_bias(lfits_bias, master_bias, fits_section=fits_section, gain=gain, method=method, dfilter=dfilter_bias, mask=mask_bias, key_find=key_find, invert_find=invert_find_bias, overwrite=overwrite)
+        ccd_master_bias = create_master_bias(lfits_bias, master_bias, fits_section=fits_section, gain=gain, method=bias_method, dfilter=dfilter_bias, mask=mask_bias, key_find=key_find, invert_find=invert_find_bias, overwrite=overwrite)
     if not create_bias and master_bias is not None:
         ccd_master_bias = fits2CCDData(master_bias, single=True)
+
+    #--------------- Master dark file ---------------------
+    ccd_master_dark = None
+    if create_dark and master_dark is not None:
+        lfits_dark = ic_all if lfits_dark is None else lfits_dark
+        if verbose:
+            print ('>>> Creating dark: %s' % os.path.basename(master_dark))
+        ccd_master_dark = create_master_dark(lfits_dark, master_dark, fits_section=fits_section, gain=gain, method=dark_method, dfilter=dfilter_dark, mask=mask_dark, key_find=key_find, invert_find=invert_find_dark, overwrite=overwrite)
+    if not create_dark and master_dark is not None:
+        ccd_master_dark = fits2CCDData(master_dark, single=True)
 
     # -------- Create Master File for each filter ---------
     dccd_master_flat = None
     if create_flat:
-        dccd_master_flat = create_master_flat_from_dict(ic_all, dflat, bias=ccd_master_bias, fits_section=fits_section, gain=gain, method=method, dfilter=dfilter_flat, mask=mask_flat, key_find=key_find, invert_find=invert_find_flat, verbose=verbose, overwrite=overwrite)
+        dccd_master_flat = create_master_flat_from_dict(ic_all, dflat, bias=ccd_master_bias, fits_section=fits_section, gain=gain, method=flat_method, dfilter=dfilter_flat, mask=mask_flat, key_find=key_find, invert_find=invert_find_flat, verbose=verbose, overwrite=overwrite)
     else:
         dccd_master_flat = {}
         for key in dflat:

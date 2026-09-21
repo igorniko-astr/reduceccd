@@ -283,7 +283,7 @@ def shiftImage(image, ref_image, precision=100, shift=None, trim=None, zoom=None
     return image
 
 def create_master_bias(list_files, fitsfile=None, fits_section=None, gain=None, method='median', 
-	dfilter={'imagetyp':'bias'}, mask=None, key_find='find', invert_find=False, sjoin=','):
+	dfilter={'imagetyp':'bias'}, mask=None, key_find='find', invert_find=False, sjoin=',', overwrite=True):
     if gain is not None and not isinstance(gain, u.Quantity):
         gain = gain * u.electron / u.adu
     lbias = []
@@ -307,12 +307,14 @@ def create_master_bias(list_files, fitsfile=None, fits_section=None, gain=None, 
     combine.header['NBIAS'] = len(list_files)
     if fitsfile is not None:
         combine.header['FILENAME'] = os.path.basename(fitsfile)
-        combine.write(fitsfile)  #, clobber=True)
+        combine.write(fitsfile,
+                      overwrite=overwrite
+                      )  #, clobber=True)
     return combine
 
 def create_master_flat(list_files, flat_filter=None, fitsfile=None, bias=None, fits_section=None, gain=None, 
 	method='median', key_filter='filter', dfilter={'imagetyp':'FLAT'}, mask=None, key_find='find', 
-	invert_find=False, sjoin=','):
+	invert_find=False, sjoin=',', overwrite=True):
     if gain is not None and not isinstance(gain, u.Quantity):
         gain = gain * u.electron / u.adu
     lflat = []
@@ -346,7 +348,9 @@ def create_master_flat(list_files, flat_filter=None, fitsfile=None, bias=None, f
     combine.header['NFLAT'] = len(list_files)
     if fitsfile is not None:
         combine.header['FILENAME'] = os.path.basename(fitsfile)
-        combine.write(fitsfile, clobber=True)
+        combine.write(fitsfile,
+                      overwrite=overwrite
+                      ) #, clobber=True)
     return combine
 
 def create_master_flat_from_dict(list_files, dflat, verbose=True, **kwargs):
@@ -360,7 +364,7 @@ def create_master_flat_from_dict(list_files, dflat, verbose=True, **kwargs):
 
 def ccdproc_images_filter(list_files, image_filter=None, master_flat=None, master_bias=None, fits_section=None, gain=None, readnoise=None, 
 	error=False, sky=True, dout=None, cosmic=False, mbox=15, rbox=15, gbox=11, cleantype="medmask", cosmic_method='lacosmic', 
-	sigclip=5, key_filter='filter', dfilter={'imagetyp':'LIGHT'}, mask=None, key_find='find', invert_find=False, **kwargs):
+	sigclip=5, key_filter='filter', dfilter={'imagetyp':'LIGHT'}, mask=None, key_find='find', invert_find=False, overwrite=True, **kwargs):
     if error and (gain is None or readnoise is None):
         print ('WARNING: You need to provide "gain" and "readnoise" to compute the error!')
         return
@@ -391,7 +395,9 @@ def ccdproc_images_filter(list_files, image_filter=None, master_flat=None, maste
         nccd.header['FILENAME'] = os.path.basename(filename)
         nccd.header['CCDVER'] = VERSION
         nccd.header = ammendHeader(nccd.header)
-        nccd.write(filename, clobber=True)
+        nccd.write(filename, 
+                   overwrite=overwrite
+                   )  # clobber=True)
     return dccd
 
 def ccdproc_images(list_files, dmaster_flat, master_bias=None, fits_section=None, sky=True, verbose=True, **kwargs):
@@ -444,7 +450,7 @@ def subtract_sky_ccd_mask(ccd, skysub='SKYSUB', skyval='SKYVAL', snr=3, npixels=
     return ccd
 
 def subtract_sky_ccd_2d(ccd, skysub='SKYSUB', skyval='SKYVAL', box_size=(50,50), filter_size=(3,3), bkg_method='sextractor', 
-	check_skysub=True, max_val=10000, fitsky=None, sigma=3., iters=10, edge_method='crop'):
+	check_skysub=True, max_val=10000, fitsky=None, sigma=3., iters=10, edge_method='crop', overwrite=True):
     # Although edge_method='pad' is recommended, it does give errors "total size of new array must be unchanged" for v0.3
     if check_skysub and skysub is not None and skysub in ccd.header and ccd.header[skysub]:
         return ccd
@@ -477,7 +483,10 @@ def subtract_sky_ccd_2d(ccd, skysub='SKYSUB', skyval='SKYVAL', box_size=(50,50),
     ccd.header['BKGTYPE'] = bkg_method
     ccd.bkg = bkg
     if fitsky is not None:
-        pyfits.writeto(fitsky, bkg.background, clobber=True)
+        pyfits.writeto(fitsky, 
+                       bkg.background, 
+                       overwrite=overwrite]
+        )  # clobber=True)
     return ccd
 
 def subtract_sky_ccd(ccd, method='2d', **kwargs):
@@ -505,7 +514,7 @@ def align_combine_images(list_files, fitsfile, ref_image_fits=None, precision=10
 	minmax_clip=False, minmax_clip_min=0.0, sigma_clip=True, date=None, clip_extrema=False, func=np.ma.median, sigclip=5, 
 	cosmic=False, mbox=15, rbox=15, gbox=11, cleantype="medmask", cosmic_method='lacosmic', sky=False, dict_sky={}, 
 	dict_combine={}, suffix=None, hfilter='FILTER', key_file='file', hobj='OBJECT', ext=0, method='median', 
-	align=True, **kwargs):
+	align=True, overwrite=True, **kwargs):
     if ref_image_fits is None:
         tobj = getTimeTable(list_files, key_time=hexp, key_file=key_file, ext=ext, abspath=True, mask=-1, sort=True, clean=True)
         ref_image_fits, list_files = tobj[key_file][-1], tobj[key_file][:-1].data.tolist()
@@ -526,7 +535,9 @@ def align_combine_images(list_files, fitsfile, ref_image_fits=None, precision=10
             img_shifted = '%s_shift.%s' % (img.split('.fit')[0], image_suffix)
             all_images.append(os.path.basename(img_shifted))
             img_shifted = join_path(img_shifted, dout)
-            offset_image.write(img_shifted, clobber=True)
+            offset_image.write(img_shifted,
+                               overwrite=overwrite
+                               )  # clobber=True)
             lccd.append(offset_image)
         else:
             all_images.append(os.path.basename(img))
@@ -550,7 +561,9 @@ def align_combine_images(list_files, fitsfile, ref_image_fits=None, precision=10
     fitsfile = join_path(fitsfile, dir_out)
     combine.header['FILENAME'] = os.path.basename(fitsfile)
     combine.header['CCDVER'] = VERSION
-    combine.write(fitsfile, clobber=True)
+    combine.write(fitsfile, 
+                  overwrite=overwrite, 
+                  )  # clobber=True)
 
 def align_combine(image_file_collection, filters=None, objects=None, dout=None, suffix=None, date=None, key_find='file', 
 	key_filter='filter', invert_find=False, dfilter={'imagetyp': 'LIGHT'}, verbose=True, force=False, find_obj=True,

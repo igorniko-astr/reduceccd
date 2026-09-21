@@ -485,8 +485,8 @@ def subtract_sky_ccd_2d(ccd, skysub='SKYSUB', skyval='SKYVAL', box_size=(50,50),
     if fitsky is not None:
         pyfits.writeto(fitsky, 
                        bkg.background, 
-                       overwrite=overwrite]
-        )  # clobber=True)
+                       overwrite=overwrite
+                       )  # clobber=True)
     return ccd
 
 def subtract_sky_ccd(ccd, method='2d', **kwargs):
@@ -614,7 +614,7 @@ def reduceNight(path, filters=None, fits_section=None, date=None, dout=None, cre
 	invert_find_bias=False, dfilter_flat={'imagetyp':'FLAT'}, mask_flat=None, cosmic_method='lacosmic', 
 	invert_find_flat=False, dfilter_images={'imagetyp':'LIGHT'}, mask_images=None, key_find='find', 
 	key_filter='filter', find_obj=True, invert_find_images=False, find_filter=True, error=False, 
-	invert_find_align=False, suffix=None, dict_align_combine={}, verbose=True):
+	invert_find_align=False, suffix=None, dict_align_combine={}, verbose=True, overwrite=True):
 
     if date is None:
         date = path.split('/')[-2] if path.endswith('/') else path.split('/')[-1]
@@ -669,14 +669,14 @@ def reduceNight(path, filters=None, fits_section=None, date=None, dout=None, cre
         lfits_bias = ic_all if lfits_bias is None else lfits_bias
         if verbose:
             print ('>>> Creating BIAS: %s' % os.path.basename(master_bias))
-        ccd_master_bias = create_master_bias(lfits_bias, master_bias, fits_section=fits_section, gain=gain, method=method, dfilter=dfilter_bias, mask=mask_bias, key_find=key_find, invert_find=invert_find_bias)
+        ccd_master_bias = create_master_bias(lfits_bias, master_bias, fits_section=fits_section, gain=gain, method=method, dfilter=dfilter_bias, mask=mask_bias, key_find=key_find, invert_find=invert_find_bias, overwrite=overwrite)
     if not create_bias and master_bias is not None:
         ccd_master_bias = fits2CCDData(master_bias, single=True)
 
     # -------- Create Master File for each filter ---------
     dccd_master_flat = None
     if create_flat:
-        dccd_master_flat = create_master_flat_from_dict(ic_all, dflat, bias=ccd_master_bias, fits_section=fits_section, gain=gain, method=method, dfilter=dfilter_flat, mask=mask_flat, key_find=key_find, invert_find=invert_find_flat, verbose=verbose)
+        dccd_master_flat = create_master_flat_from_dict(ic_all, dflat, bias=ccd_master_bias, fits_section=fits_section, gain=gain, method=method, dfilter=dfilter_flat, mask=mask_flat, key_find=key_find, invert_find=invert_find_flat, verbose=verbose, overwrite=overwrite)
     else:
         dccd_master_flat = {}
         for key in dflat:
@@ -687,10 +687,10 @@ def reduceNight(path, filters=None, fits_section=None, date=None, dout=None, cre
         ccdproc_images(ic_all, dccd_master_flat, master_bias=ccd_master_bias, fits_section=fits_section, gain=gain, dout=dout, sky=sky_before, 
 		cosmic=cosmic, mbox=mbox, rbox=rbox, gbox=gbox, cleantype=cleantype, cosmic_method=cosmic_method, key_filter=key_filter,
         	dfilter=dfilter_images, mask=mask_images, key_find=key_find, invert_find=invert_find_images, verbose=verbose, 
-		readnoise=readnoise, error=error, **dict_sky)
+		readnoise=readnoise, error=error, overwrite=overwrite, **dict_sky)
 
     # ----------- Align and combine -------------------
     if combine:
         align_file_collection = image_file_collection if dout is None else ImageFileCollection(dout, keywords=None)
-        align_combine(align_file_collection, filters, objects, dout=dout, sky=sky_after, dict_sky=dict_sky, dict_combine=dict_combine, key_find=key_find, invert_find=invert_find_align, suffix=suffix, dfilter=dfilter_images, find_obj=find_obj, find_filter=find_filter, align=align, verbose=verbose, **dict_align_combine)
+        align_combine(align_file_collection, filters, objects, dout=dout, sky=sky_after, dict_sky=dict_sky, dict_combine=dict_combine, key_find=key_find, invert_find=invert_find_align, suffix=suffix, dfilter=dfilter_images, find_obj=find_obj, find_filter=find_filter, align=align, verbose=verbose, overwrite=overwrite, **dict_align_combine)
 # ----------------------------------------------------------------------

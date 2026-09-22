@@ -406,7 +406,7 @@ def create_master_dark_from_dict(list_files, ddark, verbose=True, **kwargs):
     for dark_filter in ddark:
         master_dark = ddark[dark_filter]
         if verbose:
-            print ('>>> Creating dark: %s' % os.path.basename(master_dark))
+            print ('>>> Creating DARK: %s' % os.path.basename(master_dark))
         ddark_ccd[dark_filter] = create_master_dark(list_files, dark_filter, master_dark, **kwargs)
     return ddark_ccd
 
@@ -426,7 +426,12 @@ def ccdproc_images_filter(list_files, image_filter=None, master_dark=None, maste
     dccd = {}
     for filename in list_files:
         ccd = CCDData.read(filename, unit= u.adu)
-        nccd = ccdproc.ccd_process(ccd, trim=fits_section, gain=gain, master_bias=master_bias, master_dark=master_dark, master_flat=master_flat, readnoise=readnoise, error=error)
+        if master_dark is not None:
+            dark_kwargs = {
+                    'dark_exposure': master_dark.header['EXPOSURE'] * u.s,
+                    'data_exposure': ccd.header['EXPOSURE'] * u.s,
+                    }
+        nccd = ccdproc.ccd_process(ccd, trim=fits_section, gain=gain, master_bias=master_bias, dark_frame=master_dark, master_flat=master_flat, readnoise=readnoise, error=error, **dark_kwargs)
         for key in ccd.header:
             if not key in nccd.header:
                 nccd.header[key] = ccd.header[key]
@@ -732,8 +737,8 @@ def reduceNight(path, filters=None, fits_section=None, date=None, dout=None, cre
     if create_dark and master_dark is not None:
         lfits_dark = ic_all if lfits_dark is None else lfits_dark
         if verbose:
-            print ('>>> Creating dark: %s' % os.path.basename(master_dark))
-        ccd_master_dark = create_master_dark(lfits_dark, master_dark, fits_section=fits_section, gain=gain, method=dark_method, dfilter=dfilter_dark, mask=mask_dark, key_find=key_find, invert_find=invert_find_dark, overwrite=overwrite)
+            print ('>>> Creating DARK: %s' % os.path.basename(master_dark))
+        ccd_master_dark = create_master_dark(lfits_dark, master_dark, bias=ccd_master_bias, fits_section=fits_section, gain=gain, method=dark_method, dfilter=dfilter_dark, mask=mask_dark, key_find=key_find, invert_find=invert_find_dark, overwrite=overwrite)
     if not create_dark and master_dark is not None:
         ccd_master_dark = fits2CCDData(master_dark, single=True)
 
@@ -748,10 +753,7 @@ def reduceNight(path, filters=None, fits_section=None, date=None, dout=None, cre
 
     # ----------- Correct all science and standard stards images -------------
     if correct_images:
-        ccdproc_images(ic_all, dccd_master_flat, master_bias=ccd_master_bias, fits_section=fits_section, gain=gain, dout=dout, sky=sky_before, 
-		cosmic=cosmic, mbox=mbox, rbox=rbox, gbox=gbox, cleantype=cleantype, cosmic_method=cosmic_method, key_filter=key_filter,
-        	dfilter=dfilter_images, mask=mask_images, key_find=key_find, invert_find=invert_find_images, verbose=verbose, 
-		readnoise=readnoise, error=error, overwrite=overwrite, **dict_sky)
+        ccdproc_images(ic_all, dccd_master_flat, master_dark=ccd_master_dark, master_bias=ccd_master_bias, fits_section=fits_section, gain=gain, dout=dout, sky=sky_before, cosmic=cosmic, mbox=mbox, rbox=rbox, gbox=gbox, cleantype=cleantype, cosmic_method=cosmic_method, key_filter=key_filter, dfilter=dfilter_images, mask=mask_images, key_find=key_find, invert_find=invert_find_images, verbose=verbose, readnoise=readnoise, error=error, overwrite=overwrite, **dict_sky)
 
     # ----------- Align and combine -------------------
     if combine:
